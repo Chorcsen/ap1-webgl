@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sierpinski 垫片</title>
+<style>
+  :root {
+    --ground: #f5f3ee;   /* 暖纸底 */
+    --ink:    #221f1b;
+    --muted:  #8b857a;
+    --rule:   #ded9cf;   /* 发丝线 */
+    --accent: #a3371c;   /* 氧化红 */
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--ground); color: var(--ink);
+    font: 13px/1.55 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    display: flex; gap: 40px; padding: 36px 40px; align-items: flex-start; flex-wrap: wrap;
+  }
+
+  /* 控制栏用发丝线分区，不用卡片 */
+  #panel { width: 246px; flex: 0 0 246px; }
+  #panel h1 { font-size: 15px; font-weight: 600; letter-spacing: .06em; margin: 0; }
+  #panel h1::before { content: ""; display: block; width: 24px; height: 2px;
+                      background: var(--accent); margin-bottom: 10px; }
+
+  .field { padding: 12px 0; border-top: 1px solid var(--rule); }
+  .field:first-of-type { border-top: 0; padding-top: 0; }
+  .field[hidden] { display: none; }
+  .field > label { display: flex; justify-content: space-between; align-items: baseline;
+                   font-size: 11px; letter-spacing: .08em; color: var(--muted);
+                   margin-bottom: 9px; }
+  .field > label.mt { margin-top: 14px; }
+  .field .val { font-family: ui-monospace, Consolas, "Courier New", monospace;
+                font-size: 12px; letter-spacing: 0; color: var(--ink); }
+
+  /* 滑条 */
+  input[type=range] { -webkit-appearance: none; appearance: none;
+                      width: 100%; height: 14px; background: transparent; cursor: pointer; }
+  input[type=range]::-webkit-slider-runnable-track { height: 1px; background: #d5cec0; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 3px; height: 14px;
+                                            margin-top: -6.5px; background: var(--ink);
+                                            border: 0; border-radius: 0; }
+  input[type=range]::-moz-range-track { height: 1px; background: #d5cec0; }
+  input[type=range]::-moz-range-thumb { width: 3px; height: 14px; background: var(--ink);
+                                        border: 0; border-radius: 0; }
+
+  /* 模式切换 */
+  .seg { display: flex; }
+  .seg button { flex: 1; padding: 7px 0; margin-left: -1px; position: relative;
+                background: transparent; color: var(--muted); cursor: pointer;
+                border: 1px solid var(--rule); border-radius: 0;
+                font-size: 12px; letter-spacing: .04em; font-family: inherit; }
+  .seg button:first-child { margin-left: 0; }
+  .seg button.on { background: var(--ink); border-color: var(--ink);
+                   color: var(--ground); font-weight: 600; z-index: 1; }
+
+  /* 配色 */
+  .schemes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .schemes button { height: 30px; padding: 0; border: 0; border-radius: 0; cursor: pointer; }
+  .schemes button.on { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  button.wide { width: 100%; padding: 9px 0; background: transparent; color: var(--ink);
+                border: 1px solid var(--rule); border-radius: 0; cursor: pointer;
+                font-size: 12px; letter-spacing: .08em; font-family: inherit; }
+  button.wide:hover { border-color: var(--ink); }
+
+  /* 操作图例 */
+  .legend { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--rule);
+            display: grid; grid-template-columns: 1fr 1fr; gap: 7px 10px;
+            font-size: 11px; letter-spacing: .04em; color: var(--muted); }
+  .legend b { font-family: ui-monospace, Consolas, "Courier New", monospace;
+              font-weight: 400; color: var(--ink); margin-right: 5px; }
+
+  /* 画布 */
+  canvas { display: block; background: #000; max-width: 100%; height: auto;
+           cursor: grab; touch-action: none;
+           box-shadow: 0 1px 0 rgba(34,31,27,.12), 0 18px 40px -22px rgba(34,31,27,.5); }
+  canvas:active { cursor: grabbing; }
+</style>
+</head>
+<body>
+
+<aside id="panel"></aside>
+
+<main>
+  <canvas id="gl-canvas" width="640" height="640"></canvas>
+</main>
+
+<!-- 顶点着色器：仅做 2D 缩放 + 平移，点大小由 uniform 控制 -->
+<script id="vertex-shader" type="x-shader/x-vertex">
+#version 300 es
+in vec2 aPosition;
+uniform vec2 uScale;
+uniform vec2 uOffset;
+uniform float uPointSize;
+out vec2 vPos;
+void main()
+{
+    vPos = aPosition;
+    gl_Position = vec4(aPosition * uScale + uOffset, 0.0, 1.0);
+    gl_PointSize = uPointSize;
+}
+</script>
+
+<!-- 片元着色器：按 y 坐标在两色之间渐变，形成配色方案 -->
+<script id="fragment-shader" type="x-shader/x-fragment">
+#version 300 es
+precision mediump float;
+in vec2 vPos;
+uniform vec3 uColorA;
+uniform vec3 uColorB;
+out vec4 fColor;
+void main()
+{
+    float t = clamp(vPos.y * 0.5 + 0.5, 0.0, 1.0);
+    fColor = vec4(mix(uColorA, uColorB, t), 1.0);
+}
+</script>
+
+<!-- 工具库：initShaders() -->
+<script src="../Common/initShaders.js"></script>
+<script type="module" src="src/main.js"></script>
+
+</body>
+</html>
